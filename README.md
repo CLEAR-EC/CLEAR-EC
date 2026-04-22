@@ -1,5 +1,5 @@
 
-*CLEAR-EC**: **C**orneal **L**earning for **E**ndothelial **A**ssessment and **R**eview using AI for **E**ndothelial **C**ount
+**CLEAR-EC**: **C**orneal **L**earning for **E**ndothelial **A**ssessment and **R**eview using AI for **E**ndothelial **C**ount
 
 This repository provides a **baseline pipeline** for the CLEAR-EC challenge. The goal of this baseline is to estimate clinically relevant endothelial cell assessment metrics from corneal endothelial images:
 
