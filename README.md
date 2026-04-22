@@ -1,5 +1,5 @@
 
-*CLEAR-EC Challenge
+# CLEAR-EC Challenge
 
 **CLEAR-EC**: **C**orneal **L**earning for **E**ndothelial **A**ssessment and **R**eview using AI for **E**ndothelial **C**ount
 
