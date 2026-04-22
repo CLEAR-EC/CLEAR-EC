@@ -1,8 +1,7 @@
-# CLEAR-EC Baseline
 
-**CLEAR-EC**: **C**orneal **L**earning for **E**ndothelial **A**ssessment and **R**eview using AI for **E**ndothelial **C**ount
+*CLEAR-EC**: **C**orneal **L**earning for **E**ndothelial **A**ssessment and **R**eview using AI for **E**ndothelial **C**ount
 
-This repository provides a **baseline pipeline** for the CLEAR-EC challenge. The goal of this baseline is to estimate clinically relevant endothelial cell assessment metrics from corneal endothelial images through a simple and interpretable workflow:
+This repository provides a **baseline pipeline** for the CLEAR-EC challenge. The goal of this baseline is to estimate clinically relevant endothelial cell assessment metrics from corneal endothelial images:
 
 1. **Cell segmentation**
 2. **Instance-level cell analysis**
@@ -17,13 +16,13 @@ This baseline is intended as a transparent starting point for challenge particip
 
 ## Overview
 
-Corneal endothelial assessment is important for evaluating graft quality and endothelial health. In this baseline, we formulate the task as:
+Corneal endothelial assessment is important for evaluating corneal graft quality. In this baseline, we formulate the task as:
 
-- **Input**: Corneal endothelial image
+- **Input**: Corneal image
 - **Intermediate output**: Segmented endothelial cells
-- **Final output**: Quantitative endothelial metrics
+- **Final output**: Quantitative metrics
 
-The baseline pipeline first segments cells, then extracts cell morphology from the predicted masks, and finally computes the key metrics used in endothelial assessment.
+The baseline pipeline first segments cells, then extracts cell morphology from the predicted masks, and finally computes the key metrics used in corneal image assessment.
 
 ---
 
@@ -31,7 +30,7 @@ The baseline pipeline first segments cells, then extracts cell morphology from t
 
 ### Step 1: Cell Segmentation
 The first stage performs **cell segmentation** on the corneal endothelial image.  
-The purpose of this stage is to identify individual endothelial cells and obtain cell boundaries or instance masks.
+The purpose of this stage is to identify individual endothelial cells and obtain cell masks.
 
 ### Step 2: Cell Morphology Extraction
 From the segmentation result, the pipeline derives per-cell geometric properties such as:
@@ -49,37 +48,11 @@ The baseline computes the following metrics:
 #### 1. Cell Density
 Cell density measures the number of endothelial cells per unit area.
 
-A typical definition is:
-
-\[
-\text{Cell Density} = \frac{\text{Number of Cells}}{\text{Analyzed Area}}
-\]
-
-Depending on the challenge setup, the area may be reported in pixels or converted into physical units if image scale metadata is available.
-
 #### 2. Coefficient of Variation (CV)
-Coefficient of variation reflects variation in cell area and is commonly used to quantify **polymegethism**.
-
-A typical definition is:
-
-\[
-\text{CV} = \frac{\sigma_{\text{cell area}}}{\mu_{\text{cell area}}}
-\]
-
-where:
-- \(\sigma_{\text{cell area}}\) is the standard deviation of cell areas
-- \(\mu_{\text{cell area}}\) is the mean cell area
+Coefficient of variation reflects variation in cell area.
 
 #### 3. Hexagonality
-Hexagonality measures the proportion of cells that are hexagonal and is commonly used to quantify **pleomorphism**.
-
-A typical definition is:
-
-\[
-\text{Hexagonality} = \frac{\text{Number of Hexagonal Cells}}{\text{Total Number of Cells}} \times 100\%
-\]
-
-A cell is considered hexagonal if it has six sides or six neighbors under the polygon approximation or adjacency graph used in the implementation.
+Hexagonality measures the proportion of cells that are hexagonal. A cell is considered hexagonal if it has six sides or six neighbors under the polygon approximation or adjacency graph used in the implementation.
 
 ---
 
@@ -90,7 +63,6 @@ This repository is designed to:
 - Provide a **reference baseline** for the CLEAR-EC challenge
 - Show a simple end-to-end path from image to evaluation metrics
 - Offer a starting point for participants to build stronger methods
-- Encourage transparent and reproducible benchmarking
 
 ---
 
@@ -117,16 +89,7 @@ Depending on the challenge submission format, outputs may be saved as:
 
 ## Notes on the Baseline
 
-This baseline is intentionally simple. It serves as a demonstration pipeline rather than a production-ready clinical tool.
-
-Possible limitations include:
-
-- Sensitivity to segmentation quality
-- Difficulty handling touching or poorly visible cell boundaries
-- Dependence of downstream metrics on instance separation quality
-- Potential mismatch between geometric approximations and expert clinical assessment
-
-Participants are encouraged to improve upon this baseline by developing better segmentation models, more robust post-processing, and more accurate morphology estimation methods.
+This baseline is intentionally simple. Participants are encouraged to improve upon this baseline by developing better segmentation models, more robust post-processing, and more accurate morphology estimation methods.
 
 ---
 
