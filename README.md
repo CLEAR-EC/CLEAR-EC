@@ -107,6 +107,129 @@ which offers interpretability and direct linkage between model predictions and d
 
 ---
 
+## Setup and Installation
+
+### Requirements
+- Python 3.9+
+- CUDA 12.1 compatible GPU (for faster inference)
+- Dependencies listed in `requirements.txt` or `environment.yml`
+
+### Installation
+
+**Option 1: Using conda**
+```bash
+conda env create -f code/environment.yml
+conda activate CLEAR-EC
+```
+
+**Option 2: Using pip**
+```bash
+pip install -r code/requirements.txt
+```
+
+---
+
+## How to Run
+
+### 1. Segmentation Pipeline (`main.py`)
+
+The main script performs cell segmentation on corneal endothelial images and computes the three key metrics: Cell Density (CD), Coefficient of Variation (CV), and Hexagonality (HEX).
+
+**Basic Usage:**
+```bash
+cd code
+python main.py --split test
+```
+
+**Common Arguments:**
+- `--split` (str): Which dataset split to process. Options: `train`, `test` (default: `test`)
+- `--data_dir` (str): Directory containing input images. If not specified, defaults to `<repo>/data/<split>_mha`
+- `--results_dir` (str): Output directory for predictions CSV (default: `./results_mha`)
+- `--vis_output_dir` (str): Directory for segmentation visualization PNGs (default: `./results_mha/visualizations`)
+- `--plot`: Save segmentation overlay visualizations (optional flag)
+- `--limit` (int): Process only the first N images for quick testing (default: 0, meaning all images)
+- `--seed` (int): Random seed for reproducibility (default: 42)
+
+**Cellpose Model Parameters:**
+- `--model_type` (str): Cellpose model. Options: `cyto` (default), `cyto2`, `nuclei`
+- `--diameter` (float): Average cell diameter in pixels. If not specified, auto-estimates per image (recommended to set explicitly for endothelial cells)
+- `--flow_threshold` (float): Cellpose flow threshold (default: 0.4)
+- `--cellprob_threshold` (float): Cell probability threshold (default: 0.0)
+- `--min_size` (int): Minimum cell size in pixels (default: 15)
+- `--no_tile`: Disable internal tiling and run whole-image inference (may cause OOM on large images)
+
+**Random Crop Parameters:**
+- `--random_crop_frac` (float): Fraction of image height/width to keep for metric calculation (default: 0.4)
+
+**Example: Process test split with visualizations**
+```bash
+python main.py --split test --plot --seed 42
+```
+
+**Example: Process with custom model and diameter**
+```bash
+python main.py --split test --model_type cyto2 --diameter 30 --plot
+```
+
+**Example: Quick smoke test on first 5 images**
+```bash
+python main.py --split test --limit 5 --plot
+```
+
+**Output:**
+- Predictions CSV: `./results_mha/predictions_test.csv` (contains ID, CD, CV, HEX columns)
+- Visualizations (if `--plot` enabled): PNG files in `./results_mha/visualizations/`
+
+---
+
+### 2. Evaluation Pipeline (`evaluate.py`)
+
+Compares your predictions against ground-truth metrics and reports per-image errors and average performance.
+
+**Basic Usage:**
+```bash
+cd code
+python evaluate.py --split test
+```
+
+**Arguments:**
+- `--split` (str): Dataset split to evaluate. Options: `train`, `test` (default: `test`)
+- `--predictions_csv` (str): Path to predictions CSV from `main.py` (default: `./results_mha/predictions_test.csv`)
+- `--gt_csv` (str): Path to ground-truth CSV with reference metrics
+- `--results_dir` (str): Output directory for error analysis CSVs (default: `./results_mha`). Pass empty string to skip writing.
+
+**Example: Evaluate test predictions against ground truth**
+```bash
+python evaluate.py --split test --gt_csv /path/to/ground_truth.csv
+```
+
+**Output:**
+- Per-slide error metrics: `./results_mha/errors_test.csv`
+- Average error summary: `./results_mha/avg_error_test.csv`
+- Prints to console: per-case metrics, per-slide ranking, and average percent error
+
+---
+
+## Complete Workflow Example
+
+```bash
+cd code
+
+# 1. Run segmentation on test split
+python main.py --split test --plot --seed 42
+
+# 2. Evaluate against ground truth
+python evaluate.py --split test --gt_csv /path/to/final_test_ids.csv
+```
+
+This will:
+1. Segment all images in the test split
+2. Save predictions to `./results_mha/predictions_test.csv`
+3. Generate visualization PNGs in `./results_mha/visualizations/`
+4. Compare predictions against ground truth and report errors
+
+---
+
 ## Citation
 
 If you use this repository or adapt this baseline for challenge participation, please cite the CLEAR-EC challenge materials when available.
