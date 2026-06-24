@@ -6,11 +6,60 @@ import numpy as np
 from PIL import Image
 
 
+# MetaImage ElementType -> numpy dtype (matches convert_to_mha.py).
+_MHA_DTYPE = {
+    "MET_UCHAR": np.uint8,
+    "MET_CHAR": np.int8,
+    "MET_USHORT": np.uint16,
+    "MET_SHORT": np.int16,
+    "MET_UINT": np.uint32,
+    "MET_INT": np.int32,
+    "MET_FLOAT": np.float32,
+    "MET_DOUBLE": np.float64,
+}
+
+
+def _load_mha(path: Path) -> np.ndarray:
+    """Read an uncompressed 2D MetaImage (.mha) written by convert_to_mha.py."""
+    with open(path, "rb") as f:
+        data = f.read()
+    sep = b"ElementDataFile = LOCAL\n"
+    idx = data.find(sep)
+    if idx < 0:
+        raise ValueError(f"{path}: missing 'ElementDataFile = LOCAL' marker")
+    header = data[:idx].decode("ascii")
+    raw = data[idx + len(sep):]
+
+    fields = {}
+    for line in header.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            fields[k.strip()] = v.strip()
+
+    dim = fields["DimSize"].split()
+    width, height = int(dim[0]), int(dim[1])
+    dtype = _MHA_DTYPE[fields["ElementType"]]
+    arr = np.frombuffer(raw, dtype=dtype).reshape(height, width).copy()
+
+    if fields.get("BinaryDataByteOrderMSB", "False").lower() == "true":
+        arr = arr.byteswap().newbyteorder()
+    return arr
+
+
 def load_image(path: str | Path) -> np.ndarray:
     """
-    Load an image from the given path and return it as a numpy array.
+    Load an image from the given path and return it as a numpy RGB array.
 
     Args:
-        path (str | Path): Path to the image file.
+        path (str | Path): Path to the image file (.mha, .tif/.tiff, .bmp, .png).
     """
+    path = Path(path)
+    if path.suffix.lower() == ".mha":
+        arr = _load_mha(path)
+        # Cellpose downstream expects 3-channel RGB; replicate grayscale.
+        if arr.ndim == 2:
+            arr = np.stack([arr] * 3, axis=-1)
+        if arr.dtype != np.uint8:
+            arr = arr.astype(np.uint8)
+        return arr
     return np.array(Image.open(path).convert("RGB"))

@@ -90,12 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CLEAR-EC: compare prediction CSV against ground truth.")
     parser.add_argument("--split", type=str, default="test", choices=["train", "test"],
                         help="Which CLEAR-EC split to evaluate. Sets default --predictions_csv / --gt_csv.")
-    parser.add_argument("--predictions_csv", type=str, default=None,
-                        help="Path to predictions CSV (default: ./results/predictions_<split>.csv).")
-    parser.add_argument("--gt_csv", type=str, default=None,
+    parser.add_argument("--predictions_csv", type=str, default='./results_mha/predictions_test.csv',
+                        help="Path to predictions CSV (default: ./results_mha/predictions_<split>.csv).")
+    parser.add_argument("--gt_csv", type=str, default='/project/zhihuanglab/Peixian/CLEAR-EC/prepare_data_v2/final_ids/final_test_ids.csv',
                         help="Path to ground-truth CSV (default: <repo>/prepare_data/final_ids/final_<split>_ids.csv).")
-    parser.add_argument("--results_dir", type=str, default="./results",
-                        help="Where to write error CSVs (default: ./results). Pass empty string to skip writing.")
+    parser.add_argument("--results_dir", type=str, default="./results_mha",
+                        help="Where to write error CSVs (default: ./results_mha). Pass empty string to skip writing.")
     return parser
 
 

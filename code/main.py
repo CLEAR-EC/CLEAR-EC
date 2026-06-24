@@ -1,10 +1,12 @@
 """
 CLEAR-EC segmentation pipeline.
 
-Reads TIFF images from CLEAR-EC/data/{split}/, segments a random crop
-(default 40% of H × 40% of W) of each image with Cellpose v1.0, and writes
-per-sample predictions (CD, CV, HEX) to a CSV. Use evaluate.py to compare
-the resulting predictions against ground truth.
+Reads TIFF images from CLEAR-EC/data/{split}/, segments each FULL image with
+Cellpose v1.0, then restricts metrics (CD, CV, HEX) to a random crop region
+(default 40% of H x 40% of W) by keeping only cells whose centroid lies in
+the crop. Cells near the crop boundary still benefit from full surrounding
+context during segmentation. Per-sample predictions are written to a CSV.
+Use evaluate.py to compare the resulting predictions against ground truth.
 """
 
 import argparse
@@ -47,7 +49,7 @@ def main(args):
     os.makedirs(args.vis_output_dir, exist_ok=True)
 
     data_dir = Path(args.data_dir).expanduser().resolve()
-    files = sorted(p for p in data_dir.iterdir() if p.suffix.lower() in (".tif", ".tiff", ".bmp", ".png"))
+    files = sorted(p for p in data_dir.iterdir() if p.suffix.lower() in (".tif", ".tiff", ".bmp", ".png", ".mha"))
     if args.limit:
         files = files[: args.limit]
     print(f"Found {len(files)} images in {data_dir}")
@@ -67,12 +69,13 @@ def main(args):
         vis_output_dir=args.vis_output_dir,
         random_crop_frac=args.random_crop_frac,
         random_crop_seed=args.seed,
+        tile=not args.no_tile,
     )
 
     pred_df = pd.DataFrame(predictions)
 
     # Match CLEAR-EC ground-truth ID format: bare stem, no extension.
-    pred_df["ID"] = pred_df["ID"].astype(str).str.replace(r"\.(bmp|png|tif|tiff)$", "", regex=True)
+    pred_df["ID"] = pred_df["ID"].astype(str).str.replace(r"\.(bmp|png|tif|tiff|mha)$", "", regex=True)
 
     # Keep only the metrics CLEAR-EC reports.
     pred_df = pred_df[["ID", "CD", "CV", "HEX"]]
@@ -94,11 +97,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--split", type=str, default="test", choices=["train", "test"],
                         help="Which CLEAR-EC split to segment. Sets default --data_dir.")
     parser.add_argument("--data_dir", type=str, default=None,
-                        help="Directory of TIFF images (default: <repo>/data/<split>).")
-    parser.add_argument("--results_dir", type=str, default="./results",
-                        help="Where to write the predictions CSV (default: ./results).")
-    parser.add_argument("--vis_output_dir", type=str, default="./results/visualizations",
-                        help="Where to write segmentation visualizations (default: ./results/visualizations).")
+                        help="Directory of input images (default: <repo>/data/<split>_mha).")
+    parser.add_argument("--results_dir", type=str, default="./results_mha",
+                        help="Where to write the predictions CSV (default: ./results_mha).")
+    parser.add_argument("--vis_output_dir", type=str, default="./results_mha/visualizations",
+                        help="Where to write segmentation visualizations (default: ./results_mha/visualizations).")
     parser.add_argument("--limit", type=int, default=0,
                         help="If > 0, process only the first N images (for quick smoke tests).")
 
@@ -107,7 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Random crop (replaces bbox/annotation-based cropping).
     parser.add_argument("--random_crop_frac", type=float, default=0.4,
-                        help="Fraction of H and W kept by random crop (default 0.4, matching corneal-eyebank-challenge).")
+                        help="Fraction of H and W kept by random crop.")
 
     # Cellpose v1.0 parameters.
     parser.add_argument("--model_type", type=str, default="cyto",
@@ -123,13 +126,15 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Cellpose v1.0 default 15.")
     parser.add_argument("--plot", action="store_true", default=False,
                         help="Save segmentation overlay PNGs to --vis_output_dir.")
+    parser.add_argument("--no_tile", action="store_true", default=False,
+                        help="Disable Cellpose internal tiling and run whole-image inference (may OOM on large images).")
 
     return parser
 
 
 def resolve_paths(args) -> argparse.Namespace:
     if args.data_dir is None:
-        args.data_dir = str(REPO_ROOT / "data" / args.split)
+        args.data_dir = str(REPO_ROOT / "data" / f"{args.split}_mha")
     return args
 
 

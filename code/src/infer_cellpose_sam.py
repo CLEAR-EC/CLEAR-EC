@@ -35,6 +35,44 @@ def random_crop(image: np.ndarray, frac: float = 0.4, rng: random.Random = None)
     return image[y0 : y0 + ch, x0 : x0 + cw], (x0, y0, x0 + cw, y0 + ch)
 
 
+def random_crop_bbox(shape, frac: float, rng: random.Random = None):
+    """
+    Return a random crop bbox (x0, y0, x1, y1) of size (frac*H, frac*W) for an
+    image of the given `shape`. Same RNG semantics as `random_crop` so existing
+    seed-based reproducibility is preserved.
+    """
+    if rng is None:
+        rng = random
+    h, w = shape[:2]
+    ch = max(1, int(h * frac))
+    cw = max(1, int(w * frac))
+    y0 = rng.randint(0, max(0, h - ch))
+    x0 = rng.randint(0, max(0, w - cw))
+    return (x0, y0, x0 + cw, y0 + ch)
+
+
+def crop_and_relabel_masks(masks: np.ndarray, bbox) -> np.ndarray:
+    """
+    Slice `masks` to `bbox` (x0, y0, x1, y1) and relabel surviving cells
+    contiguously from 1.
+
+    Cells that straddle the crop boundary are clipped — only the portion
+    inside the bbox is kept, with their original mask shape truncated.
+    Relabeling is required because `calculate_hexagonality` iterates with
+    `range(np.max(masks))`, which assumes contiguous labels 1..N.
+    """
+    x0, y0, x1, y1 = bbox
+    cropped = masks[y0:y1, x0:x1]
+
+    unique_labels = np.unique(cropped)
+    unique_labels = unique_labels[unique_labels > 0]
+
+    out = np.zeros_like(cropped)
+    for new_label, old_label in enumerate(unique_labels, start=1):
+        out[cropped == old_label] = new_label
+    return out
+
+
 def visualize_segmentation(
     image: np.ndarray,
     masks: np.ndarray,
@@ -42,7 +80,8 @@ def visualize_segmentation(
     image_id: str = None,
     save_path: str = None,
     show: bool = False,
-    dots: list = None,  # [(cx, cy), ...] in crop-space coordinates
+    dots: list = None,  # [(cx, cy), ...] in full-image coordinates
+    crop_bbox: tuple = None,  # (x0, y0, x1, y1) random crop region to highlight
 ):
     """
     Visualize segmentation results alongside the original image.
@@ -55,12 +94,24 @@ def visualize_segmentation(
         save_path: Path to save the figure (optional)
         show: Whether to display the figure
     """
+    from matplotlib.patches import Rectangle
+
     fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-    
+
+    def _draw_crop_rect(ax):
+        if crop_bbox is None:
+            return
+        x0, y0, x1, y1 = crop_bbox
+        ax.add_patch(Rectangle(
+            (x0, y0), x1 - x0, y1 - y0,
+            edgecolor="yellow", facecolor="none", linewidth=2, linestyle="--",
+        ))
+
     # Left: Original image
     axes[0].imshow(image)
     axes[0].set_title(f"Original Image: {image_id}" if image_id else "Original Image")
     axes[0].axis("off")
+    _draw_crop_rect(axes[0])
     
     # Right: Image with segmentation overlay
     if masks is not None and masks.max() > 0:
@@ -94,11 +145,13 @@ def visualize_segmentation(
 
         num_cells = len(np.unique(masks)) - 1  # Exclude background
         n_dots = len(dots) if dots else 0
-        axes[1].set_title(f"Segmentation: {num_cells} cells  |  {n_dots} annotation dots")
+        crop_note = "  |  yellow box = metric region" if crop_bbox is not None else ""
+        axes[1].set_title(f"Segmentation: {num_cells} cells (full image){crop_note}  |  {n_dots} annotation dots")
     else:
         axes[1].imshow(image)
         axes[1].set_title("Segmentation Result: No cells detected")
-    
+
+    _draw_crop_rect(axes[1])
     axes[1].axis("off")
     
     plt.tight_layout()
@@ -133,6 +186,7 @@ def get_segmentation(
     vis_output_dir: str = "results/visualizations",
     random_crop_frac: float = None,     # if set, take random crop of this fraction
     random_crop_seed: int = None,       # seed for reproducible random crops
+    tile: bool = True,                  # Cellpose internal tiling; False = whole-image inference
 ):
     """
     Perform segmentation using Cellpose v1.0 on entire images.
@@ -168,18 +222,20 @@ def get_segmentation(
         image = load_image(pathname)  # lazy: decode just-in-time
         print(f"Processing image: {pathname.name}")
 
-        # Crop region: random crop takes precedence over bbox annotations
+        # Decide the crop bbox up front but DO NOT crop the image yet.
+        # Segmentation runs on the full image so cells near the crop boundary
+        # still benefit from full surrounding context. Metrics are restricted
+        # to cells whose centroid falls inside `crop_bbox` (handled after the
+        # model runs).
         stem = pathname.stem
-        bbox_crop = None
+        crop_bbox = None
         if random_crop_frac is not None:
-            image, bbox_crop = random_crop(image, frac=random_crop_frac, rng=rng)
-            print(f"  random crop ({random_crop_frac:.2f}) -> bbox={bbox_crop}, shape={image.shape}")
+            crop_bbox = random_crop_bbox(image.shape, frac=random_crop_frac, rng=rng)
+            print(f"  random crop ({random_crop_frac:.2f}) -> bbox={crop_bbox}, full image shape={image.shape}")
         elif annotations and stem in annotations and annotations[stem].get("bbox"):
             x0, y0, x1, y1 = annotations[stem]["bbox"]
-            x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
-            bbox_crop = (x0, y0, x1, y1)
-            image = image[y0:y1, x0:x1]
-            print(f"  cropped to bbox ({x0},{y0},{x1},{y1}), shape={image.shape}")
+            crop_bbox = (int(x0), int(y0), int(x1), int(y1))
+            print(f"  annotation bbox crop {crop_bbox}, full image shape={image.shape}")
 
         # Apply preprocessing if specified
         if preprocess:
@@ -211,21 +267,22 @@ def get_segmentation(
                 cellprob_threshold=cellprob_threshold,
                 min_size=min_size,
                 net_avg=False,
+                tile=tile,
             )
         except Exception as e:
             print(f"Error during model evaluation: {e}")
             continue
 
-        # Filter cells by annotation dots
-        if match_dots and annotations and stem in annotations and annotations[stem].get("dots") and bbox_crop is not None:
-            bx0, by0 = bbox_crop[0], bbox_crop[1]
-            dots_bmp = np.array(annotations[stem]["dots"])   # (D, 2) [cx, cy] BMP space
+        # Filter cells by annotation dots. Masks are in full-image coordinates
+        # (segmentation ran on the whole image), so cell centroids are already
+        # in the same space as `dots` — no offset adjustment needed.
+        if match_dots and annotations and stem in annotations and annotations[stem].get("dots"):
+            dots_bmp = np.array(annotations[stem]["dots"])   # (D, 2) [cx, cy] full-image space
             props    = regionprops(masks)
 
             if len(props) > 0 and len(dots_bmp) > 0:
-                # cell centroids in BMP space: (C, 2) [cx, cy]
                 cell_centroids = np.array([
-                    [prop.centroid[1] + bx0, prop.centroid[0] + by0]
+                    [prop.centroid[1], prop.centroid[0]]
                     for prop in props
                 ])
                 # pairwise distance matrix (C, D)
@@ -257,10 +314,23 @@ def get_segmentation(
                 masks = np.zeros_like(masks)
                 print("  matching: no cells or no dots, mask cleared")
 
-        # Calculate metrics from masks. Keep ID as the file stem so it can be matched
-        # against any ground-truth scheme (bmp / tiff / no-extension) downstream.
+        # Keep the full segmentation for visualization (so the plot shows all
+        # detected cells across the entire image). Metrics use the literal
+        # cropped slice — cells that straddle the crop boundary are cut, and
+        # their partial shape is what contributes to CD / CV / HEX.
+        masks_full = masks
+        if crop_bbox is not None:
+            masks_metric = crop_and_relabel_masks(masks_full, crop_bbox)
+            print(f"  cells (incl. partial) in cropped region: {int(masks_metric.max())} "
+                  f"(full image: {int(masks_full.max())})")
+        else:
+            masks_metric = masks_full
+
+        # Calculate metrics on the cropped masks. Keep ID as the file stem so
+        # it can be matched against any ground-truth scheme (bmp / tiff /
+        # no-extension) downstream.
         image_id = pathname.stem
-        prediction = calculate_metrics_from_masks(masks, ID=image_id)
+        prediction = calculate_metrics_from_masks(masks_metric, ID=image_id)
 
         print(prediction)
 
@@ -268,25 +338,26 @@ def get_segmentation(
             predictions.append(prediction)
             print(f"Successfully processed {image_id}")
             
-            # Visualize segmentation results
+            # Visualize segmentation results. Image and masks are both in
+            # full-image space; the random crop region is drawn as an overlay.
             if plotting:
                 os.makedirs(vis_output_dir, exist_ok=True)
                 vis_path = os.path.join(vis_output_dir, f"{pathname.stem}_segmentation.png")
 
-                # Convert annotation dots from BMP space → crop space for visualization
+                # Annotation dots are already in full-image (BMP) space.
                 vis_dots = None
-                if annotations and stem in annotations and annotations[stem].get("dots") and bbox_crop is not None:
-                    bx0, by0 = bbox_crop[0], bbox_crop[1]
-                    vis_dots = [(d[0] - bx0, d[1] - by0) for d in annotations[stem]["dots"]]
+                if annotations and stem in annotations and annotations[stem].get("dots"):
+                    vis_dots = [(d[0], d[1]) for d in annotations[stem]["dots"]]
 
                 visualize_segmentation(
                     image=image,
-                    masks=masks,
+                    masks=masks_full,  # full-image segmentation, not crop-filtered
                     flows=flows[0] if flows is not None else None,
                     image_id=image_id,
                     save_path=vis_path,
                     show=False,
                     dots=vis_dots,
+                    crop_bbox=crop_bbox,
                 )
         else:
             print(f"Warning: No valid predictions for {image_id}")
